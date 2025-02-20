@@ -29,6 +29,15 @@ class CrawlerSettings(BaseSettings):
     ELASTICSEARCH_PORT: int = int(os.getenv("ELASTICSEARCH_PORT", "9200"))
     MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
     
+    # PostgreSQL settings
+    POSTGRES_HOST: str = os.getenv("POSTGRES_HOST", "localhost")
+    POSTGRES_PORT: int = int(os.getenv("POSTGRES_PORT", "5432"))
+    POSTGRES_DB: str = os.getenv("POSTGRES_DB", "crawler")
+    POSTGRES_USER: str = os.getenv("POSTGRES_USER", "crawler")
+    POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "crawler")
+    POSTGRES_POOL_SIZE: int = int(os.getenv("POSTGRES_POOL_SIZE", "20"))
+    POSTGRES_MAX_OVERFLOW: int = int(os.getenv("POSTGRES_MAX_OVERFLOW", "10"))
+    
     # Monitoring settings
     PROMETHEUS_PORT: int = int(os.getenv("PROMETHEUS_PORT", "9090"))
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
