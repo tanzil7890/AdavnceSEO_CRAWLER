@@ -162,3 +162,25 @@ pytest
 ## License
 
 MIT License - See LICENSE file for details 
+
+
+pip install -r requirements.txt
+
+python -m spacy download en_core_web_sm
+python -m nltk.downloader punkt
+
+curl -X POST "http://localhost:8000/search" -H "Content-Type: application/json" -d '{
+  "query": "positive sentiment",
+  "filter": {"sentiment_analysis.overall_sentiment": {"gt": 0.7}}
+}'
+
+curl -X POST "http://localhost:8000/search" -H "Content-Type: application/json" -d '{
+  "query": "organization",
+  "filter": {"extracted_entities.ORG": "Google"}
+}'
+
+
+curl -X POST "http://localhost:8000/search" -H "Content-Type: application/json" -d '{
+  "query": "technology",
+  "filter": {"topic_classification.primary_topic": "technology"}
+}'

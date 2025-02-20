@@ -46,7 +46,46 @@ class ElasticsearchStorage:
                     "content_type": {"type": "keyword"},
                     "content_length": {"type": "long"},
                     "status_code": {"type": "integer"},
-                    "crawl_time": {"type": "float"}
+                    "crawl_time": {"type": "float"},
+                    "sentiment_analysis": {
+                        "type": "object",
+                        "properties": {
+                            "overall_sentiment": {"type": "float"},
+                            "sentence_sentiments": {
+                                "type": "nested",
+                                "properties": {
+                                    "text": {"type": "text"},
+                                    "label": {"type": "keyword"},
+                                    "score": {"type": "float"}
+                                }
+                            },
+                            "positive_sentences": {"type": "integer"},
+                            "total_sentences": {"type": "integer"}
+                        }
+                    },
+                    "extracted_entities": {
+                        "type": "object",
+                        "properties": {
+                            "PERSON": {"type": "keyword"},
+                            "ORG": {"type": "keyword"},
+                            "LOC": {"type": "keyword"},
+                            "MISC": {"type": "keyword"}
+                        }
+                    },
+                    "topic_classification": {
+                        "type": "object",
+                        "properties": {
+                            "main_topics": {"type": "keyword"},
+                            "primary_topic": {"type": "keyword"},
+                            "topic_scores": {
+                                "type": "nested",
+                                "properties": {
+                                    "topic": {"type": "keyword"},
+                                    "score": {"type": "float"}
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -82,7 +121,15 @@ class ElasticsearchStorage:
                 "content_type": metadata.get("content_type", ""),
                 "content_length": metadata.get("content_length", 0),
                 "status_code": metadata.get("status_code", 0),
-                "crawl_time": metadata.get("crawl_time", 0.0)
+                "crawl_time": metadata.get("crawl_time", 0.0),
+                "sentiment_analysis": {
+                    "overall_sentiment": metadata.get("sentiment_analysis", {}).get("overall_sentiment", 0.0),
+                    "sentence_sentiments": metadata.get("sentiment_analysis", {}).get("sentence_sentiments", []),
+                    "positive_sentences": metadata.get("sentiment_analysis", {}).get("positive_sentences", 0),
+                    "total_sentences": metadata.get("sentiment_analysis", {}).get("total_sentences", 0)
+                },
+                "extracted_entities": metadata.get("extracted_entities", {}),
+                "topic_classification": metadata.get("topic_classification", {})
             }
             
             response = await self.es.index(

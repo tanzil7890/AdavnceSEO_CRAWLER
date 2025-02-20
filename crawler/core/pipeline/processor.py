@@ -7,11 +7,31 @@ import json
 import re
 from urllib.parse import urlparse
 import hashlib
+import asyncio
+from textblob import TextBlob
+import spacy
+from transformers import pipeline
+import nltk
+from nltk.tokenize import sent_tokenize
+import torch
 
 from ..parser.html_parser import ParsedPage
 from ...monitoring.metrics import metrics
 
 logger = logging.getLogger(__name__)
+
+# Download required NLTK data
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt')
+
+# Load spaCy model
+try:
+    nlp = spacy.load('en_core_web_sm')
+except OSError:
+    spacy.cli.download('en_core_web_sm')
+    nlp = spacy.load('en_core_web_sm')
 
 @dataclass
 class ProcessingResult:
@@ -215,6 +235,193 @@ class ContentClassifierProcessor(PipelineProcessor):
             
         return min(score, 2.0)  # Cap at 2.0
         
+class SentimentAnalysisProcessor(PipelineProcessor):
+    """Analyze sentiment of text content."""
+    
+    def __init__(self):
+        self.sentiment_analyzer = pipeline(
+            "sentiment-analysis",
+            model="distilbert-base-uncased-finetuned-sst-2-english",
+            device=0 if torch.cuda.is_available() else -1
+        )
+        
+    async def process(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            text_content = data.get('text_content', '')
+            
+            # Split text into sentences for more granular analysis
+            sentences = sent_tokenize(text_content[:5000])  # Limit to first 5000 chars
+            
+            # Analyze sentiment of each sentence
+            sentiments = []
+            for sentence in sentences:
+                if len(sentence.strip()) > 10:  # Only analyze meaningful sentences
+                    result = self.sentiment_analyzer(sentence)[0]
+                    sentiments.append({
+                        'text': sentence,
+                        'label': result['label'],
+                        'score': result['score']
+                    })
+            
+            # Calculate overall sentiment
+            positive_count = sum(1 for s in sentiments if s['label'] == 'POSITIVE')
+            total_count = len(sentiments)
+            overall_sentiment = positive_count / total_count if total_count > 0 else 0.5
+            
+            # Add sentiment analysis results
+            data['sentiment_analysis'] = {
+                'overall_sentiment': overall_sentiment,
+                'sentence_sentiments': sentiments[:10],  # Store top 10 sentences
+                'positive_sentences': positive_count,
+                'total_sentences': total_count
+            }
+            
+            return data
+            
+        except Exception as e:
+            logger.error(f"Error in sentiment analysis: {e}")
+            data['sentiment_analysis'] = {
+                'error': str(e),
+                'overall_sentiment': 0.5
+            }
+            return data
+
+class EntityExtractionProcessor(PipelineProcessor):
+    """Extract named entities from text content."""
+    
+    def __init__(self):
+        self.ner_pipeline = pipeline(
+            "ner",
+            model="dbmdz/bert-large-cased-finetuned-conll03-english",
+            device=0 if torch.cuda.is_available() else -1
+        )
+        
+    async def process(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            text_content = data.get('text_content', '')
+            
+            # Use spaCy for initial entity extraction
+            doc = nlp(text_content[:10000])  # Limit to first 10000 chars
+            
+            # Extract entities using spaCy
+            spacy_entities = {}
+            for ent in doc.ents:
+                if ent.label_ not in spacy_entities:
+                    spacy_entities[ent.label_] = []
+                if ent.text not in spacy_entities[ent.label_]:
+                    spacy_entities[ent.label_].append(ent.text)
+                    
+            # Use transformers for additional entity detection
+            transformer_entities = self.ner_pipeline(text_content[:5000])
+            
+            # Merge and deduplicate entities
+            processed_entities = {
+                'PERSON': [],
+                'ORG': [],
+                'LOC': [],
+                'MISC': []
+            }
+            
+            # Process spaCy entities
+            for label, entities in spacy_entities.items():
+                category = self._map_entity_type(label)
+                if category:
+                    processed_entities[category].extend(entities)
+                    
+            # Process transformer entities
+            for entity in transformer_entities:
+                category = self._map_entity_type(entity['entity'])
+                if category and entity['word'] not in processed_entities[category]:
+                    processed_entities[category].append(entity['word'])
+                    
+            # Deduplicate and limit entities
+            for category in processed_entities:
+                processed_entities[category] = list(set(processed_entities[category]))[:10]
+                
+            data['extracted_entities'] = processed_entities
+            
+            return data
+            
+        except Exception as e:
+            logger.error(f"Error in entity extraction: {e}")
+            data['extracted_entities'] = {
+                'error': str(e),
+                'entities': {}
+            }
+            return data
+            
+    def _map_entity_type(self, entity_type: str) -> Optional[str]:
+        """Map different entity type notations to common categories."""
+        person_types = {'PERSON', 'PER', 'B-PER', 'I-PER'}
+        org_types = {'ORG', 'ORGANIZATION', 'B-ORG', 'I-ORG'}
+        loc_types = {'LOC', 'GPE', 'LOCATION', 'B-LOC', 'I-LOC'}
+        
+        if entity_type in person_types:
+            return 'PERSON'
+        elif entity_type in org_types:
+            return 'ORG'
+        elif entity_type in loc_types:
+            return 'LOC'
+        else:
+            return 'MISC'
+
+class TopicClassificationProcessor(PipelineProcessor):
+    """Classify content into topics."""
+    
+    def __init__(self):
+        self.classifier = pipeline(
+            "text-classification",
+            model="facebook/bart-large-mnli",
+            device=0 if torch.cuda.is_available() else -1
+        )
+        self.topics = [
+            "technology", "business", "politics", "science",
+            "health", "entertainment", "sports", "education"
+        ]
+        
+    async def process(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            text_content = data.get('text_content', '')
+            title = data.get('title', '')
+            
+            # Combine title and beginning of content for classification
+            classification_text = f"{title}. {text_content[:1000]}"
+            
+            # Classify content against each topic
+            topic_scores = []
+            for topic in self.topics:
+                result = self.classifier(
+                    f"This text is about {topic}: {classification_text}",
+                    truncation=True
+                )[0]
+                topic_scores.append({
+                    'topic': topic,
+                    'score': result['score'] if result['label'] == 'ENTAILMENT' else 1 - result['score']
+                })
+                
+            # Sort topics by score
+            topic_scores.sort(key=lambda x: x['score'], reverse=True)
+            
+            # Get main topics (those with score > 0.5)
+            main_topics = [t['topic'] for t in topic_scores if t['score'] > 0.5]
+            
+            data['topic_classification'] = {
+                'main_topics': main_topics[:3],  # Top 3 topics
+                'topic_scores': topic_scores,
+                'primary_topic': topic_scores[0]['topic'] if topic_scores else None
+            }
+            
+            return data
+            
+        except Exception as e:
+            logger.error(f"Error in topic classification: {e}")
+            data['topic_classification'] = {
+                'error': str(e),
+                'main_topics': [],
+                'primary_topic': None
+            }
+            return data
+
 class DataPipeline:
     """Main pipeline coordinator."""
     
@@ -223,7 +430,10 @@ class DataPipeline:
             ContentCleanerProcessor(),
             KeywordExtractorProcessor(),
             LinkAnalyzerProcessor(),
-            ContentClassifierProcessor()
+            ContentClassifierProcessor(),
+            SentimentAnalysisProcessor(),
+            EntityExtractionProcessor(),
+            TopicClassificationProcessor()
         ]
         
     async def process_page(self, parsed_page: ParsedPage) -> ProcessingResult:
