@@ -3,6 +3,7 @@ from typing import Dict, Any, List, Optional
 import logging
 from datetime import datetime
 import json
+from urllib.parse import urlparse
 
 from ..config.settings import settings
 from ..core.parser.html_parser import ParsedPage
@@ -11,143 +12,68 @@ logger = logging.getLogger(__name__)
 
 class ElasticsearchStorage:
     def __init__(self):
-        # Properly format the Elasticsearch URL
-        elasticsearch_url = f"http://{settings.ELASTICSEARCH_HOST}:{settings.ELASTICSEARCH_PORT}"
         self.es = AsyncElasticsearch(
-            hosts=[elasticsearch_url],
+            hosts=[f"http://{settings.ELASTICSEARCH_HOST}:{settings.ELASTICSEARCH_PORT}"],
+            basic_auth=(settings.ELASTICSEARCH_USERNAME, settings.ELASTICSEARCH_PASSWORD),
             verify_certs=False,
             request_timeout=30
         )
         self.index_name = "web_pages"
-        self.index_settings = {
-            "settings": {
-                "number_of_shards": 5,
-                "number_of_replicas": 1,
-                "analysis": {
-                    "analyzer": {
-                        "html_analyzer": {
-                            "type": "custom",
-                            "tokenizer": "standard",
-                            "char_filter": ["html_strip"],
-                            "filter": ["lowercase", "stop", "snowball"]
-                        }
-                    }
-                }
-            },
-            "mappings": {
-                "properties": {
-                    "url": {"type": "keyword"},
-                    "title": {"type": "text", "analyzer": "html_analyzer"},
-                    "description": {"type": "text", "analyzer": "html_analyzer"},
-                    "keywords": {"type": "keyword"},
-                    "text_content": {"type": "text", "analyzer": "html_analyzer"},
-                    "links": {"type": "keyword"},
-                    "images": {"type": "nested"},
-                    "metadata": {"type": "object"},
-                    "headers": {"type": "object"},
-                    "timestamp": {"type": "date"},
-                    "domain": {"type": "keyword"},
-                    "content_type": {"type": "keyword"},
-                    "content_length": {"type": "long"},
-                    "status_code": {"type": "integer"},
-                    "crawl_time": {"type": "float"},
-                    "sentiment_analysis": {
-                        "type": "object",
-                        "properties": {
-                            "overall_sentiment": {"type": "float"},
-                            "sentence_sentiments": {
-                                "type": "nested",
-                                "properties": {
-                                    "text": {"type": "text"},
-                                    "label": {"type": "keyword"},
-                                    "score": {"type": "float"}
-                                }
-                            },
-                            "positive_sentences": {"type": "integer"},
-                            "total_sentences": {"type": "integer"}
-                        }
-                    },
-                    "extracted_entities": {
-                        "type": "object",
-                        "properties": {
-                            "PERSON": {"type": "keyword"},
-                            "ORG": {"type": "keyword"},
-                            "LOC": {"type": "keyword"},
-                            "MISC": {"type": "keyword"}
-                        }
-                    },
-                    "topic_classification": {
-                        "type": "object",
-                        "properties": {
-                            "main_topics": {"type": "keyword"},
-                            "primary_topic": {"type": "keyword"},
-                            "topic_scores": {
-                                "type": "nested",
-                                "properties": {
-                                    "topic": {"type": "keyword"},
-                                    "score": {"type": "float"}
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
+
     async def initialize(self):
-        """Initialize Elasticsearch indices and mappings."""
         try:
+            # Test connection
+            await self.es.info()
+            
             if not await self.es.indices.exists(index=self.index_name):
                 await self.es.indices.create(
                     index=self.index_name,
-                    body=self.index_settings
+                    mappings={
+                        "properties": {
+                            "url": {"type": "keyword"},
+                            "content": {"type": "text"},
+                            "title": {"type": "text"},
+                            "timestamp": {"type": "date"},
+                            "status": {"type": "keyword"}
+                        }
+                    },
+                    settings={
+                        "number_of_shards": 1,
+                        "number_of_replicas": 0
+                    }
                 )
                 logger.info(f"Created index {self.index_name}")
         except Exception as e:
-            logger.error(f"Error initializing Elasticsearch: {e}")
+            logger.error(f"Elasticsearch initialization error: {e}")
             raise
-            
-    async def store_page(self, parsed_page: ParsedPage, metadata: Dict[str, Any]) -> bool:
-        """Store a parsed page in Elasticsearch."""
+
+    async def store_page(self, url: str, html: str, status_code: int, content_type: str, metadata: Optional[Dict] = None):
+        """Store a crawled page in Elasticsearch."""
         try:
+            if metadata is None:
+                metadata = {}
+                
             document = {
-                "url": parsed_page.url,
-                "title": parsed_page.title,
-                "description": parsed_page.description,
-                "keywords": parsed_page.keywords,
-                "text_content": parsed_page.text_content,
-                "links": parsed_page.links,
-                "images": parsed_page.images,
-                "metadata": parsed_page.metadata,
-                "headers": parsed_page.headers,
-                "timestamp": parsed_page.timestamp,
-                "domain": metadata.get("domain", ""),
-                "content_type": metadata.get("content_type", ""),
-                "content_length": metadata.get("content_length", 0),
-                "status_code": metadata.get("status_code", 0),
-                "crawl_time": metadata.get("crawl_time", 0.0),
-                "sentiment_analysis": {
-                    "overall_sentiment": metadata.get("sentiment_analysis", {}).get("overall_sentiment", 0.0),
-                    "sentence_sentiments": metadata.get("sentiment_analysis", {}).get("sentence_sentiments", []),
-                    "positive_sentences": metadata.get("sentiment_analysis", {}).get("positive_sentences", 0),
-                    "total_sentences": metadata.get("sentiment_analysis", {}).get("total_sentences", 0)
-                },
-                "extracted_entities": metadata.get("extracted_entities", {}),
-                "topic_classification": metadata.get("topic_classification", {})
+                "url": url,
+                "html": html,
+                "status_code": status_code,
+                "content_type": content_type,
+                "domain": urlparse(url).netloc,
+                "timestamp": datetime.utcnow().isoformat(),
+                "metadata": metadata,
+                "content_length": len(html),
+                "crawl_time": metadata.get("crawl_time", 0)
             }
             
-            response = await self.es.index(
+            await self.es.index(
                 index=self.index_name,
-                body=document,
-                id=metadata.get("url_hash")
+                document=document
             )
             
-            return response["result"] in ("created", "updated")
-            
         except Exception as e:
-            logger.error(f"Error storing page {parsed_page.url}: {e}")
-            return False
-            
+            logger.error(f"Error storing page {url}: {e}")
+            raise
+
     async def get_page(self, url_hash: str) -> Optional[Dict[str, Any]]:
         """Retrieve a page by its URL hash."""
         try:
@@ -214,5 +140,5 @@ class ElasticsearchStorage:
             return {}
             
     async def cleanup(self):
-        """Cleanup resources."""
-        await self.es.close() 
+        if self.es:
+            await self.es.close() 
