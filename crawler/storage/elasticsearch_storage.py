@@ -11,8 +11,12 @@ logger = logging.getLogger(__name__)
 
 class ElasticsearchStorage:
     def __init__(self):
+        # Properly format the Elasticsearch URL
+        elasticsearch_url = f"http://{settings.ELASTICSEARCH_HOST}:{settings.ELASTICSEARCH_PORT}"
         self.es = AsyncElasticsearch(
-            [f"{settings.ELASTICSEARCH_HOST}:{settings.ELASTICSEARCH_PORT}"]
+            hosts=[elasticsearch_url],
+            verify_certs=False,
+            request_timeout=30
         )
         self.index_name = "web_pages"
         self.index_settings = {

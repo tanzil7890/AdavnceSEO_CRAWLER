@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import hashlib
 import logging
 from urllib.parse import urlparse
-import aioredis
+import redis.asyncio as aioredis
 from kafka import KafkaProducer, KafkaConsumer
 from bloom_filter2 import BloomFilter
 import robotexclusionrulesparser

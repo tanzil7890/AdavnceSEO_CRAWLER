@@ -9,7 +9,6 @@ services:
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
     ports:
       - "9200:9200"
-      - "9300:9300"
     volumes:
       - elasticsearch_data:/usr/share/elasticsearch/data
     networks:
@@ -17,8 +16,9 @@ services:
 
   redis:
     image: redis:latest
+    command: redis-server --port 6378
     ports:
-      - "6379:6379"
+      - "6378:6378"
     volumes:
       - redis_data:/data
     networks:
@@ -31,8 +31,9 @@ services:
       POSTGRES_USER: crawler
       POSTGRES_PASSWORD: crawler
       PGDATA: /data/postgres
+    command: -p 5433
     ports:
-      - "5432:5432"
+      - "5433:5433"
     volumes:
       - postgres_data:/data/postgres
     networks:
@@ -66,6 +67,9 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    volumes:
+      - ./scripts/init_kafka.sh:/scripts/init_kafka.sh
     networks:
       - crawler_network
 
@@ -81,6 +85,11 @@ services:
 
   grafana:
     image: grafana/grafana:latest
+    container_name: grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-crawler}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-crawler123}
+      - GF_USERS_ALLOW_SIGN_UP=${GRAFANA_ALLOW_SIGN_UP:-false}
     ports:
       - "3000:3000"
     volumes:

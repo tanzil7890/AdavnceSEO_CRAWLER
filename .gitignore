@@ -1,10 +1,66 @@
+# OS generated files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Environment and virtual environments
 .env
 .venv
+venv/
+env/
+ENV/
+.python-version
+pip-log.txt
+pip-delete-this-directory.txt
 
+# IDE files
 .idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
 
+# Dependencies
+node_modules/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.eggs/
 
+# Logs and databases
+*.log
+*.sqlite
+*.db
+crawler.log
+data/elasticsearch/
+data/postgres/
+data/redis/
+data/prometheus/
 
+# Build and distribution
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+coverage.xml
+.coverage
+htmlcov/
 
+# Local development
 .cursor
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Crawler specific
+crawler/web/frontend/build/
+crawler/web/frontend/node_modules/
+crawler/web/frontend/.env
+scripts/*.pyc

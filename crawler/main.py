@@ -9,7 +9,7 @@ import json
 import uvicorn
 from datetime import datetime
 
-from .core.frontier.url_frontier import URLFrontier
+from crawler.core.frontier.url_frontier import URLFrontier
 from .core.fetcher.crawler import CrawlerWorker
 from .storage.elasticsearch_storage import ElasticsearchStorage
 from .monitoring.metrics import metrics
@@ -148,20 +148,14 @@ class CrawlerManager:
             await self.storage.cleanup()
             
 def parse_args():
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description="Distributed Web Crawler")
-    parser.add_argument(
-        "--seed-urls",
-        type=str,
-        required=True,
-        help="JSON file containing seed URLs"
-    )
-    parser.add_argument(
-        "--num-workers",
-        type=int,
-        default=settings.FRONTIER_WORKER_COUNT,
-        help="Number of crawler workers"
-    )
+    parser = argparse.ArgumentParser(description='Web Crawler')
+    parser.add_argument('--seed-urls', 
+                       required=True,
+                       help='Path to JSON file containing seed URLs')
+    parser.add_argument('--num-workers',
+                       type=int,
+                       default=5,
+                       help='Number of crawler workers')
     return parser.parse_args()
     
 async def main():

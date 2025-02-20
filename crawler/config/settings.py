@@ -1,4 +1,4 @@
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings
 from typing import Dict, List, Optional
 import os
 from dotenv import load_dotenv
@@ -6,9 +6,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class CrawlerSettings(BaseSettings):
+    # Grafana settings
+    GF_SECURITY_ADMIN_USER: str = os.getenv("GF_SECURITY_ADMIN_USER", "admin")
+    GF_SECURITY_ADMIN_PASSWORD: str = os.getenv("GF_SECURITY_ADMIN_PASSWORD", "admin")
+    GF_USERS_ALLOW_SIGN_UP: bool = os.getenv("GF_USERS_ALLOW_SIGN_UP", "false").lower() == "true"
+    
     # Redis settings
     REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
-    REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
+    REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6378"))
     REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))
     
     # Kafka settings
@@ -31,7 +36,7 @@ class CrawlerSettings(BaseSettings):
     
     # PostgreSQL settings
     POSTGRES_HOST: str = os.getenv("POSTGRES_HOST", "localhost")
-    POSTGRES_PORT: int = int(os.getenv("POSTGRES_PORT", "5432"))
+    POSTGRES_PORT: int = int(os.getenv("POSTGRES_PORT", "5433"))
     POSTGRES_DB: str = os.getenv("POSTGRES_DB", "crawler")
     POSTGRES_USER: str = os.getenv("POSTGRES_USER", "crawler")
     POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "crawler")
@@ -55,5 +60,6 @@ class CrawlerSettings(BaseSettings):
     
     class Config:
         env_file = ".env"
+        extra = "allow"  # Allow extra fields
 
 settings = CrawlerSettings() 
