@@ -39,6 +39,9 @@ class SearchRequest(BaseModel):
     query: str
     size: Optional[int] = 10
     
+class Domain(BaseModel):
+    url: HttpUrl
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize components on startup."""
@@ -153,4 +156,32 @@ async def get_metrics():
         }
     except Exception as e:
         logger.error(f"Error getting metrics: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) 
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/domains")
+async def add_domain(domain: Domain):
+    try:
+        # Normalize the URL
+        url = str(domain.url)
+        if not url.startswith(('http://', 'https://')):
+            url = f'https://{url}'
+            
+        # Add to frontier
+        added = await frontier.add_url(url)
+        if added:
+            await frontier.redis.rpush('frontier:urls', url)
+            metrics.urls_discovered.inc()
+            return {"status": "success", "message": f"Added domain: {url}"}
+        else:
+            return {"status": "warning", "message": "Domain already exists"}
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/status")
+async def get_status():
+    return {
+        "frontier_size": frontier.size,
+        "urls_discovered": metrics.urls_discovered._value.get(),
+        "pages_crawled": metrics.pages_crawled._value.get()
+    } 

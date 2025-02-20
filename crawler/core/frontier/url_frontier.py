@@ -22,9 +22,10 @@ class URLFrontier:
             f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
         )
         self.bloom_filter = BloomFilter(max_elements=10000000, error_rate=0.001)
-        self.domain_access_times: Dict[str, datetime] = {}
+        self._url_count = 0
+        self.domain_access_times = {}
         self.robots_parser = robotexclusionrulesparser.RobotExclusionRulesParser()
-        self.robots_cache: Dict[str, str] = {}
+        self.robots_cache = {}
         self.prioritizer = URLPrioritizer()
         
         # Kafka setup
@@ -33,57 +34,45 @@ class URLFrontier:
             value_serializer=lambda x: str(x).encode('utf-8')
         )
         
-    async def add_url(self, url: str, priority: int = 1, domain_stats: Optional[Dict] = None) -> bool:
+    async def initialize(self):
+        """Initialize the URL frontier."""
+        try:
+            # Clear existing data
+            await self.redis.flushdb()
+            
+            # Initialize metrics
+            metrics.frontier_size.set(0)
+            
+            logger.info("URL Frontier initialized successfully")
+            
+        except Exception as e:
+            logger.error(f"Error initializing URL frontier: {e}")
+            raise
+
+    async def add_url(self, url: str) -> bool:
         """Add a URL to the frontier if it hasn't been seen before."""
-        url_hash = self._get_url_hash(url)
-        
-        if url_hash in self.bloom_filter:
-            return False
+        try:
+            url_hash = hashlib.sha256(url.encode()).hexdigest()
             
-        domain = urlparse(url).netloc
-        if not await self._is_allowed_by_robots(url):
-            logger.info(f"URL {url} not allowed by robots.txt")
-            return False
+            # Check if URL has been seen before
+            if url_hash in self.bloom_filter:
+                return False
             
-        self.bloom_filter.add(url_hash)
-        
-        # Calculate URL score using the prioritizer
-        score = await self._calculate_url_score(url, priority, domain_stats)
-        
-        # Store URL with calculated score
-        await self.redis.zadd(
-            "frontier:urls",
-            {url: score.final_score}
-        )
-        
-        # Store additional URL metadata
-        await self.redis.hset(
-            f"frontier:metadata:{url_hash}",
-            mapping={
-                "base_score": score.base_score,
-                "freshness_score": score.freshness_score,
-                "relevance_score": score.relevance_score,
-                "popularity_score": score.popularity_score,
-                "added_time": datetime.now().isoformat()
-            }
-        )
-        
-        # Update domain queue size metric
-        domain_queue_size = await self.redis.zcount(
-            "frontier:urls",
-            float('-inf'),
-            float('inf')
-        )
-        metrics.update_domain_queue_size(domain, domain_queue_size)
-        
-        # Publish to Kafka for distributed processing
-        self.producer.send(
-            settings.KAFKA_TOPIC_NEW_URLS,
-            value=url
-        )
-        
-        return True
-        
+            # Add to bloom filter and Redis
+            self.bloom_filter.add(url_hash)
+            await self.redis.rpush('frontier:urls', url)
+            self._url_count += 1
+            
+            # Update metrics
+            metrics.urls_discovered.inc()
+            metrics.frontier_size.set(self._url_count)
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error adding URL {url} to frontier: {e}")
+            return False
+
     async def get_next_urls(self, batch_size: int = 100) -> List[str]:
         """Get the next batch of URLs to crawl, respecting politeness policies."""
         current_time = datetime.now()
@@ -228,11 +217,41 @@ class URLFrontier:
         
     async def cleanup(self):
         """Cleanup resources."""
-        await self.redis.close()
-        self.producer.close()
+        try:
+            # Close Kafka producer
+            if self.producer:
+                self.producer.close()
+            
+            # Close Redis connection
+            await self.redis.close()
+            
+            logger.info("URL Frontier cleaned up successfully")
+            
+        except Exception as e:
+            logger.error(f"Error cleaning up URL frontier: {e}")
+            raise
         
     @classmethod
     async def create(cls) -> 'URLFrontier':
         """Factory method to create and initialize URLFrontier instance."""
         frontier = cls()
         return frontier 
+
+    async def get_next_url(self) -> Optional[str]:
+        """Get the next URL to crawl."""
+        try:
+            url = await self.redis.lpop('frontier:urls')
+            if url:
+                self._url_count -= 1
+                metrics.frontier_size.set(self._url_count)
+                return url.decode('utf-8')
+            return None
+        
+        except Exception as e:
+            logger.error(f"Error getting next URL from frontier: {e}")
+            return None
+
+    @property
+    def size(self) -> int:
+        """Get approximate size of frontier."""
+        return self._url_count 

@@ -28,7 +28,7 @@ wait_for_service localhost 6378 "Redis"
 wait_for_service localhost 9092 "Kafka"
 
 # Additional wait for Kafka to be fully ready
-sleep 30
+sleep 10
 
 # Initialize Kafka topics
 echo "Initializing Kafka topics..."

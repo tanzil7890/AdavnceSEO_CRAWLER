@@ -29,39 +29,83 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class CrawlerManager:
-    def __init__(self, seed_urls: List[str], num_workers: int = 5):
+    def __init__(self, seed_urls: str, num_workers: int = 5):
+        """Initialize the crawler manager.
+        
+        Args:
+            seed_urls (str): Path to JSON file containing seed URLs
+            num_workers (int): Number of crawler workers to spawn
+        """
         self.seed_urls = seed_urls
         self.num_workers = num_workers
-        self.workers: List[CrawlerWorker] = []
         self.running = True
-        self.frontier: URLFrontier = None
-        self.storage: ElasticsearchStorage = None
+        self.storage = ElasticsearchStorage()
+        self.frontier = URLFrontier()
+        self.workers = []
+        
+        # Set up signal handlers
+        signal.signal(signal.SIGINT, self._signal_handler)
+        signal.signal(signal.SIGTERM, self._signal_handler)
         
     async def initialize(self):
-        """Initialize the crawler manager and workers."""
-        logger.info("Initializing crawler manager...")
-        
-        # Initialize storage
-        self.storage = ElasticsearchStorage()
-        await self.storage.initialize()
-        
-        # Create and initialize URL frontier
-        self.frontier = await URLFrontier.create()
-        
-        # Add seed URLs to frontier
-        for url in self.seed_urls:
-            await self.frontier.add_url(url, priority=10)  # High priority for seed URLs
+        """Initialize the crawler manager."""
+        try:
+            # Start metrics server
+            metrics.start_server()
             
-        # Create workers
-        self.workers = [CrawlerWorker() for _ in range(self.num_workers)]
-        
-        # Setup signal handlers
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            signal.signal(sig, self._signal_handler)
+            # Initialize storage
+            await self.storage.initialize()
             
-        # Start metrics server
-        metrics.start_server()
-        metrics.update_active_crawlers(self.num_workers)
+            # Initialize frontier
+            await self.frontier.initialize()
+            
+            # Initialize workers
+            self.workers = [
+                CrawlerWorker(
+                    worker_id=i,
+                    frontier=self.frontier,
+                    storage=self.storage
+                ) for i in range(self.num_workers)
+            ]
+            
+            # Initialize each worker
+            for worker in self.workers:
+                await worker.initialize()
+                
+            logger.info("Crawler manager initialized successfully")
+            
+        except Exception as e:
+            logger.error(f"Error initializing crawler: {e}")
+            raise
+        
+    async def initialize_frontier(self):
+        """Initialize the URL frontier with seed URLs."""
+        try:
+            # Read seed URLs from JSON file
+            with open(self.seed_urls, 'r') as f:
+                seed_urls = json.load(f)
+                
+            if isinstance(seed_urls, str):
+                seed_urls = [seed_urls]
+            elif not isinstance(seed_urls, list):
+                raise ValueError("Seed URLs must be a string or list of strings")
+                
+            # Add each URL to the frontier
+            for url in seed_urls:
+                # Normalize URL
+                if not url.startswith(('http://', 'https://')):
+                    url = f'https://{url}'
+                    
+                added = await self.frontier.add_url(url)
+                if added:
+                    await self.frontier.redis.rpush('frontier:urls', url)
+                    metrics.urls_discovered.inc()
+                    
+            logger.info(f"Added {len(seed_urls)} seed URLs to frontier")
+            
+        except Exception as e:
+            logger.error(f"Error initializing frontier with seed URLs: {e}")
+            raise
         
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals."""
@@ -71,6 +115,9 @@ class CrawlerManager:
     async def start(self):
         """Start the crawler workers and API server."""
         logger.info(f"Starting {self.num_workers} crawler workers...")
+        
+        # Initialize frontier with seed URLs
+        await self.initialize_frontier()
         
         # Start API server
         api_config = uvicorn.Config(
@@ -109,8 +156,8 @@ class CrawlerManager:
                 if not pending:
                     break
                     
-                # Update metrics
-                metrics.update_frontier_size(len(self.frontier.bloom_filter))
+                # Update metrics using the new size property
+                metrics.update_frontier_size(self.frontier.size)
                 
         except asyncio.CancelledError:
             logger.info("Crawler manager received cancellation request")
@@ -147,44 +194,25 @@ class CrawlerManager:
         if self.storage:
             await self.storage.cleanup()
             
-def parse_args():
-    parser = argparse.ArgumentParser(description='Web Crawler')
-    parser.add_argument('--seed-urls', 
-                       required=True,
-                       help='Path to JSON file containing seed URLs')
-    parser.add_argument('--num-workers',
-                       type=int,
-                       default=5,
-                       help='Number of crawler workers')
-    return parser.parse_args()
-    
 async def main():
-    """Main entry point."""
-    args = parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--seed-urls', required=True, help='Path to seed URLs file')
+    parser.add_argument('--num-workers', type=int, default=5, help='Number of crawler workers')
+    args = parser.parse_args()
     
     try:
         # Load seed URLs
         with open(args.seed_urls) as f:
             seed_urls = json.load(f)
             
-        # Create and start crawler manager
-        manager = CrawlerManager(
-            seed_urls=seed_urls,
-            num_workers=args.num_workers
-        )
-        
+        # Initialize and start crawler
+        manager = CrawlerManager(seed_urls=args.seed_urls, num_workers=args.num_workers)
         await manager.initialize()
         await manager.start()
         
     except Exception as e:
         logger.error(f"Crawler failed with error: {e}")
-        sys.exit(1)
-        
+        raise
+
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("Received keyboard interrupt. Shutting down...")
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}")
-        sys.exit(1) 
+    asyncio.run(main()) 
