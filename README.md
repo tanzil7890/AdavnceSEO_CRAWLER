@@ -1,75 +1,76 @@
-# Distributed Web Crawler
+# Distributed Web Crawler with ML-Powered Analytics
 
-A high-performance distributed web crawler system capable of crawling billions of pages efficiently, featuring advanced URL prioritization and intelligent content processing.
+A high-performance distributed web crawler system with machine learning capabilities for intelligent content processing, URL prioritization, and advanced analytics. The system features a modern React-based dashboard for real-time monitoring and control.
 
 ## Features
 
-### Core Features
-- Distributed URL frontier with intelligent prioritization
-- High-performance crawler engine with politeness policies
-- Robust data extraction and processing pipeline
-- Scalable storage system for web data and metadata
-- Real-time monitoring and analytics
-- Compliance with web standards (robots.txt, rate limits)
+### Core Capabilities
+- **Distributed Crawling**
+  * Scalable URL frontier with ML-based prioritization
+  * Concurrent crawling with politeness policies
+  * Robust error handling and retry mechanisms
+  * Configurable crawl depth and scope
 
-### Advanced URL Prioritization
-- Multi-factor scoring system
-  * Base scoring with domain reputation
-  * Freshness-based prioritization
-  * Content relevance scoring
-  * Domain popularity metrics
-- Adaptive scoring based on crawl results
-- Pattern-based URL evaluation
-- Intelligent domain management
+### Machine Learning Components
+- **Content Analysis**
+  * Sentiment analysis using DistilBERT
+  * Named entity extraction with BERT and spaCy
+  * Topic classification using BART
+  * Custom content classification with fine-tuning capabilities
 
-### Data Processing Pipeline
-- Content cleaning and normalization
-- Advanced keyword extraction and scoring
-- Link analysis and relationship scoring
-- Content classification and quality assessment
-- Modular pipeline architecture
-- Real-time content analysis
+- **URL Prioritization**
+  * ML-powered URL scoring
+  * Domain reputation analysis
+  * Adaptive crawl strategies
+  * Pattern-based URL evaluation
 
-### Storage and Analytics
-- Elasticsearch for full-text search and analytics
-- Redis for URL frontier and metadata
-- Kafka for distributed message processing
-- Prometheus metrics integration
-- Comprehensive domain statistics
+### Data Processing
+- **Content Processing**
+  * Advanced HTML parsing and cleaning
+  * Keyword extraction and scoring
+  * Link analysis and relationship mapping
+  * Image and metadata extraction
 
-## Architecture
+### Storage System
+- **Multi-Database Architecture**
+  * Elasticsearch for full-text search and analytics
+  * PostgreSQL for structured data and raw content
+  * Redis for URL frontier and caching
+  * Kafka for message queuing
 
-The system consists of several key components:
+### Monitoring & Analytics
+- **Real-time Dashboard**
+  * Modern React-based UI with Material Design
+  * Live crawling statistics
+  * Domain-specific analytics
+  * Search functionality
+  * System configuration interface
 
-1. **URL Frontier**: 
-   - Manages URL queue with intelligent prioritization
-   - Implements politeness and rate limiting
-   - Handles URL deduplication and scoring
+- **Metrics & Logging**
+  * Prometheus integration
+  * Grafana dashboards
+  * Comprehensive logging
+  * Performance tracking
 
-2. **Crawler Engine**: 
-   - Fetches web pages respecting politeness policies
-   - Handles retries and error management
-   - Supports concurrent crawling
+## System Requirements
 
-3. **Parser & Extractor**: 
-   - Processes HTML content
-   - Extracts metadata and links
-   - Performs content analysis
+- Python 3.8+
+- Node.js 14+
+- Docker and Docker Compose
+- 8GB RAM minimum (16GB recommended)
+- 4 CPU cores minimum
 
-4. **Data Pipeline**:
-   - Cleans and normalizes content
-   - Extracts and scores keywords
-   - Analyzes link relationships
-   - Classifies content type and quality
+## Installation & Setup
 
-5. **Analytics Engine**: 
-   - Processes crawl statistics
-   - Generates domain insights
-   - Monitors system performance
+### 1. Clone the Repository
+```bash
+git clone <repository-url>
+cd distributed-crawler
+```
 
-## Setup
+### 2. Environment Setup
 
-1. Create a virtual environment:
+Create and activate a Python virtual environment:
 ```bash
 python -m venv venv
 source venv/bin/activate  # On Unix/macOS
@@ -77,110 +78,173 @@ source venv/bin/activate  # On Unix/macOS
 .\venv\Scripts\activate  # On Windows
 ```
 
-2. Install dependencies:
+Install Python dependencies:
 ```bash
 pip install -r requirements.txt
+
+# Download required NLP models
+python -m spacy download en_core_web_sm
+python -m nltk.downloader punkt
 ```
 
-3. Configure environment variables:
+### 3. Configure Environment Variables
+
+Copy the example environment file:
 ```bash
 cp .env.example .env
-# Edit .env with your configuration
 ```
 
-4. Start required services:
+Edit `.env` with your configuration:
+```env
+# Redis settings
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB=0
+
+# Elasticsearch settings
+ELASTICSEARCH_HOST=localhost
+ELASTICSEARCH_PORT=9200
+
+# PostgreSQL settings
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=crawler
+POSTGRES_USER=crawler
+POSTGRES_PASSWORD=your_secure_password
+
+# Other settings as needed
+```
+
+### 4. Start Infrastructure Services
+
+Start all required services using Docker Compose:
 ```bash
-# Start Elasticsearch
-docker run -d --name elasticsearch -p 9200:9200 -p 9300:9300 -e "discovery.type=single-node" elasticsearch:8.11.1
-
-# Start Redis
-docker run -d --name redis -p 6379:6379 redis
-
-# Start Kafka (using docker-compose)
 docker-compose up -d
 ```
 
-5. Start the crawler:
+This will start:
+- Elasticsearch
+- PostgreSQL
+- Redis
+- Kafka & Zookeeper
+- Prometheus
+- Grafana
+
+### 5. Setup Web Dashboard
+
+Install frontend dependencies:
+```bash
+cd crawler/web/frontend
+npm install
+```
+
+Start the development server:
+```bash
+npm start
+```
+
+The dashboard will be available at `http://localhost:3000`
+
+### 6. Initialize the System
+
+Run the initialization script:
+```bash
+./scripts/start.sh
+```
+
+This script will:
+- Wait for all services to be ready
+- Initialize Kafka topics
+- Create necessary database schemas
+- Start the crawler system
+
+## Running the Crawler
+
+### Start Crawling
 ```bash
 python -m crawler.main --seed-urls seed_urls.json --num-workers 5
 ```
 
-## Configuration
+### Monitor Progress
+- Access the dashboard at `http://localhost:3000`
+- View metrics at `http://localhost:9090` (Prometheus)
+- Check Grafana dashboards at `http://localhost:3000`
 
-The system can be configured through:
-- Environment variables
-- Configuration files in `config/`
-- Command-line arguments
+## API Endpoints
 
-### Key Configuration Options
-- `MAX_CONCURRENT_REQUESTS`: Maximum concurrent crawl requests
-- `POLITENESS_DELAY`: Delay between requests to same domain
-- `URL_BATCH_SIZE`: Number of URLs to process in each batch
-- `FRONTIER_WORKER_COUNT`: Number of crawler workers
+### Crawler Control
+- `POST /crawl` - Add URLs to crawl
+- `GET /stats` - Get crawler statistics
+- `GET /domain/{domain}/stats` - Get domain-specific stats
+
+### Search & Analytics
+- `POST /search` - Search crawled content
+- `GET /page/{url_hash}` - Get specific page details
 
 ## Development
 
 ### Project Structure
 ```
 crawler/
-├── config/           # Configuration files
-├── core/             # Core crawler components
-│   ├── frontier/     # URL Frontier implementation
-│   │   ├── prioritizer.py    # URL scoring system
-│   │   └── url_frontier.py   # URL management
-│   ├── fetcher/      # Crawler engine
-│   ├── parser/       # HTML parsing and extraction
-│   └── pipeline/     # Data processing pipeline
-├── storage/          # Storage implementations
-├── monitoring/       # Monitoring and metrics
-├── api/             # API endpoints
-└── utils/           # Utility functions
+├── api/                 # API endpoints
+├── core/               # Core crawler components
+│   ├── frontier/       # URL management
+│   ├── fetcher/        # Content fetching
+│   ├── parser/         # HTML parsing
+│   └── pipeline/       # Data processing
+├── ml/                 # Machine learning components
+│   ├── content_classifier.py
+│   └── url_prioritizer.py
+├── storage/            # Storage implementations
+├── web/               # Web dashboard
+└── monitoring/        # Metrics and monitoring
 ```
 
 ### Adding New Features
 
-#### Adding Pipeline Processors
-1. Create a new class inheriting from `PipelineProcessor`
-2. Implement the `process` method
-3. Add the processor to `DataPipeline.processors`
+1. **New Processors**
+   - Create a class inheriting from `PipelineProcessor`
+   - Implement the `process` method
+   - Add to `DataPipeline.processors`
 
-#### Customizing URL Prioritization
-1. Modify scoring weights in `URLPrioritizer`
-2. Add new scoring factors in `calculate_score`
-3. Update domain scoring logic as needed
+2. **Custom ML Models**
+   - Add model class in `ml/`
+   - Implement training and inference methods
+   - Update pipeline integration
 
-### Running Tests
-```bash
-pytest
-```
+## Troubleshooting
 
-### Monitoring
-- Prometheus metrics available at http://localhost:9090/metrics
-- API endpoints for statistics at http://localhost:8000/stats
-- Domain-specific metrics at http://localhost:8000/domain/{domain}/stats
+### Common Issues
+
+1. **Services Not Starting**
+   ```bash
+   # Check service status
+   docker-compose ps
+   
+   # View logs
+   docker-compose logs <service-name>
+   ```
+
+2. **Database Connection Issues**
+   ```bash
+   # Verify PostgreSQL
+   psql -h localhost -U crawler -d crawler
+   
+   # Check Elasticsearch
+   curl http://localhost:9200
+   ```
+
+3. **Memory Issues**
+   - Increase Docker memory limit
+   - Adjust JVM heap size for Elasticsearch
+   - Monitor with `docker stats`
+
+### Logs
+
+- Application logs: `crawler.log`
+- Service logs: `docker-compose logs`
+- Access logs: Available in respective service containers
 
 ## License
 
-MIT License - See LICENSE file for details 
-
-
-pip install -r requirements.txt
-
-python -m spacy download en_core_web_sm
-python -m nltk.downloader punkt
-
-curl -X POST "http://localhost:8000/search" -H "Content-Type: application/json" -d '{
-  "query": "positive sentiment",
-  "filter": {"sentiment_analysis.overall_sentiment": {"gt": 0.7}}
-}'
-
-curl -X POST "http://localhost:8000/search" -H "Content-Type: application/json" -d '{
-  "query": "organization",
-  "filter": {"extracted_entities.ORG": "Google"}
-}'
-
-
-curl -X POST "http://localhost:8000/search" -H "Content-Type: application/json" -d '{
-  "query": "technology",
-  "filter": {"topic_classification.primary_topic": "technology"}
-}'
+MIT License - See LICENSE file for details
